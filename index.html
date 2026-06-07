@@ -630,38 +630,18 @@ const createDictationSession = function({ onFinal, onInterim, onEnd, keepRef }) 
     let ws = null, audioCtx = null, processor = null, source = null, micStream = null;
     let stopped = false;
 
-    // Step 1: Get temp token via our Netlify function proxy (avoids CORS on AssemblyAI's endpoint)
-    if (onInterim) onInterim("⏳ Connecting to AssemblyAI Live…");
-
-    fetch("/.netlify/functions/aai-token", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ apiKey: aaiKey }),
-    })
-    .then(function(res) {
-      // If function not found, Netlify may return HTML — catch it before JSON parse
-      const ct = res.headers.get("content-type") || "";
-      if (!ct.includes("application/json")) {
-        throw new Error("Netlify function not found — redeploy the latest zip to Netlify");
-      }
-      return res.json();
-    })
-    .then(function(tokenData) {
-      if (!tokenData.token) throw new Error("Could not get AssemblyAI token — check your API key in Settings");
-
-      // Step 2: Get microphone stream
-      return navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(function(stream) {
+    // Token endpoint (/v2/realtime/token) returns 404 — API changed.
+    // AssemblyAI accepts the API key directly as the WebSocket token.
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(function(stream) {
           micStream = stream;
 
-          // Build AudioContext — use browser's native sample rate, pass it to AssemblyAI
           audioCtx = new (window.AudioContext || window.webkitAudioContext)();
           const sampleRate = audioCtx.sampleRate;
 
-          // word_boost is NOT supported in AssemblyAI streaming URL (batch-only feature)
-          // Clean URL — just sample_rate and token
+          // API key used directly — no temp token needed
           const wsUrl = "wss://api.assemblyai.com/v2/realtime/ws?sample_rate=" + sampleRate
-            + "&token=" + tokenData.token;
+            + "&token=" + aaiKey;
 
           ws = new WebSocket(wsUrl);
           {  // open brace to match nesting
@@ -722,12 +702,11 @@ const createDictationSession = function({ onFinal, onInterim, onEnd, keepRef }) 
             }
           };
           } // close WSS block
-        });
-    })
-    .catch(function(err) {
-      if (onInterim) onInterim("⚠ AssemblyAI Live: " + (err.message || "Connection error") + " — check your API key in Settings");
-      setTimeout(function() { if (onInterim) onInterim(""); if (onEnd) onEnd(); }, 6000);
-    });
+      })
+      .catch(function(err) {
+        if (onInterim) onInterim("⚠ AssemblyAI Live: " + (err.message || "Connection error") + " — check your API key in Settings");
+        setTimeout(function() { if (onInterim) onInterim(""); if (onEnd) onEnd(); }, 6000);
+      });
 
     return {
       stop: function() {
