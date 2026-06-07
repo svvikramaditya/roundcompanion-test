@@ -1,13 +1,11 @@
-// Netlify serverless function — AssemblyAI Live token proxy
-// Uses Node's built-in https module (no npm packages needed, works on all Node versions)
 const https = require("https");
 
 exports.handler = async (event) => {
-  // CORS preflight
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 200,
       headers: {
+        "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
@@ -17,7 +15,11 @@ exports.handler = async (event) => {
   }
 
   if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: JSON.stringify({ error: "Method not allowed" }) };
+    return {
+      statusCode: 405,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify({ error: "Method not allowed" }),
+    };
   }
 
   let apiKey = "";
@@ -25,14 +27,21 @@ exports.handler = async (event) => {
     const body = JSON.parse(event.body || "{}");
     apiKey = body.apiKey || "";
   } catch (e) {
-    return { statusCode: 400, body: JSON.stringify({ error: "Invalid request body" }) };
+    return {
+      statusCode: 400,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify({ error: "Invalid request body" }),
+    };
   }
 
   if (!apiKey) {
-    return { statusCode: 400, body: JSON.stringify({ error: "No API key provided" }) };
+    return {
+      statusCode: 400,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify({ error: "No API key provided" }),
+    };
   }
 
-  // Call AssemblyAI token endpoint server-side (no CORS issue here)
   return new Promise((resolve) => {
     const postData = JSON.stringify({ expires_in: 480 });
     const options = {
@@ -58,19 +67,27 @@ exports.handler = async (event) => {
               "Content-Type": "application/json",
               "Access-Control-Allow-Origin": "*",
             },
-            body: JSON.stringify({ token: parsed.token || null, error: parsed.error || null }),
+            body: JSON.stringify({
+              token: parsed.token || null,
+              error: parsed.error || (res.statusCode !== 200 ? "AssemblyAI returned status " + res.statusCode + ": " + data.substring(0, 200) : null),
+            }),
           });
         } catch (e) {
           resolve({
             statusCode: 500,
-            body: JSON.stringify({ error: "AssemblyAI response parse error: " + e.message }),
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+            body: JSON.stringify({ error: "Response parse error: " + data.substring(0, 200) }),
           });
         }
       });
     });
 
     req.on("error", (e) => {
-      resolve({ statusCode: 500, body: JSON.stringify({ error: "Request failed: " + e.message }) });
+      resolve({
+        statusCode: 500,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify({ error: "Network error: " + e.message }),
+      });
     });
 
     req.write(postData);
